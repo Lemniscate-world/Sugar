@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import tempfile
+from unittest.mock import MagicMock, patch
 
 from sugar.connectors.obsidian import ObsidianConnector
 
@@ -115,4 +116,4 @@ class TestObsidianConnector:
         params = {"path": "missing.md", "content": "test"}
         result = self.connector.execute("append_to_note", params)
         assert result.success is False
-        assert "does not exist" in result.data
+        assert "not found" in result.data.lower()
