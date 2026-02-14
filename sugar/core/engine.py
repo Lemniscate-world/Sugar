@@ -61,34 +61,60 @@ class Engine:
             self.start_conversation()
 
         if self.current_conversation is None:
-             raise RuntimeError("Failed to start conversation")
+            raise RuntimeError("Failed to start conversation")
 
         # Save user message
         self.memory.add_message(self.current_conversation, "user", user_message)
 
         # Build context from memory
-        context_messages = self.memory.get_context_messages(
-            self.current_conversation, limit=20
-        )
-
-        # Build enhanced system prompt with tool descriptions
+        context_messages = self.memory.get_context_messages(self.current_conversation, limit=20)
         system_prompt = self._build_system_prompt()
 
-        # Send to LLM
-        llm_response = self.llm.chat(context_messages, system_prompt=system_prompt)
+        current_messages = list(context_messages)
+        depth = 0
+        MAX_DEPTH = 5
+        last_response = ""
 
-        # Process tool calls if any
-        if llm_response.has_tool_calls:
-            final_response = self._process_tool_calls(
-                llm_response, context_messages, system_prompt
+        while depth < MAX_DEPTH:
+            depth += 1
+            llm_response = self.llm.chat(current_messages, system_prompt=system_prompt)
+            last_response = llm_response.content
+
+            # Save assistant response (raw including JSON)
+            self.memory.add_message(self.current_conversation, "assistant", llm_response.raw)
+            current_messages.append({"role": "assistant", "content": llm_response.raw})
+
+            if not llm_response.has_tool_calls:
+                break
+
+            # Execute tool calls
+            tool_results = []
+            for call in llm_response.tool_calls:
+                tool_name = call.get("tool", "")
+                action = call.get("action", "")
+                params = call.get("params", {})
+
+                logger.info("Tool call: %s.%s(%s)", tool_name, action, params)
+
+                connector = self.connectors.get(tool_name)
+                if not connector:
+                    tool_results.append(f"⚠️ Unknown tool: '{tool_name}'")
+                    continue
+
+                result = connector.execute(action, params)
+                status = "✅" if result.success else "❌"
+                tool_results.append(f"{status} {tool_name}.{action}:\n{result.data}")
+
+            # Feedback loop
+            tool_context = "\n\n".join(tool_results)
+            feedback = (
+                f"Results from previous tool calls:\n\n{tool_context}\n\n"
+                "Analyze these results. If you have the answer, respond to the user. "
+                "If you need more information, use another tool call."
             )
-        else:
-            final_response = llm_response.content
+            current_messages.append({"role": "user", "content": feedback})
 
-        # Save assistant response
-        self.memory.add_message(self.current_conversation, "assistant", final_response)
-
-        return final_response
+        return last_response
 
     def _build_system_prompt(self) -> str:
         """Build the system prompt including available connector descriptions."""
@@ -112,50 +138,7 @@ class Engine:
 
         return base_prompt + connector_docs
 
-    def _process_tool_calls(
-        self,
-        llm_response: LLMResponse,
-        context_messages: list[dict[str, str]],
-        system_prompt: str,
-    ) -> str:
-        """Execute tool calls and get a final response from the LLM."""
-        tool_results = []
 
-        for call in llm_response.tool_calls:
-            tool_name = call.get("tool", "")
-            action = call.get("action", "")
-            params = call.get("params", {})
-
-            logger.info("Tool call: %s.%s(%s)", tool_name, action, params)
-
-            connector = self.connectors.get(tool_name)
-            if not connector:
-                tool_results.append(
-                    f"⚠️ Unknown tool: '{tool_name}'. "
-                    f"Available: {list(self.connectors.keys())}"
-                )
-                continue
-
-            result = connector.execute(action, params)
-            status = "✅" if result.success else "❌"
-            tool_results.append(f"{status} {tool_name}.{action}:\n{result.data}")
-
-        # Send tool results back to the LLM for a natural language summary
-        tool_context = "\n\n".join(tool_results)
-        follow_up_messages = context_messages + [
-            {"role": "assistant", "content": llm_response.raw},
-            {
-                "role": "user",
-                "content": (
-                    f"Here are the results from the tools you called:\n\n{tool_context}\n\n"
-                    "Now provide a helpful, natural language response to the user based on "
-                    "these results. Do NOT include any JSON tool calls in your response."
-                ),
-            },
-        ]
-
-        final_response = self.llm.chat(follow_up_messages, system_prompt=system_prompt)
-        return final_response.content or tool_context
 
     def process_message_stream(self, user_message: str) -> Generator[str, None, None]:
         """Process a message and yield chunks (streaming).
