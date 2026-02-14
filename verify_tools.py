@@ -1,26 +1,35 @@
 import requests
 import json
-import time
+import logging
+import sys
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger("verify_tools")
 
 BASE_URL = "http://localhost:8000"
 
 def test_tools():
-    print("--- Status Check ---")
+    logger.info("--- Status Check ---")
     r = requests.get(f"{BASE_URL}/api/status")
     status = r.json()
-    print("Engine Status:", json.dumps(status.get("engine"), indent=2))
+    logger.info("Engine Status: %s", json.dumps(status.get("engine"), indent=2))
     
     if not status.get("engine", {}).get("connectors", {}).get("obsidian"):
-        print("⚠️ Obsidian not configured. Skipping search test.")
+        logger.warning("Obsidian not configured. Skipping search test.")
         return
 
-    print("\n--- Chat Tool Test (Search) ---")
+    logger.info("--- Chat Tool Test (Search) ---")
     cid = requests.post(f"{BASE_URL}/api/conversations").json()['id']
-    print(f"Conversation: {cid}")
+    logger.info("Conversation: %s", cid)
     
     payload = {
         "messages": [{"role": "user", "content": "Search my notes for 'todo' or 'task'"}],
-        "model": "tinyllama",
+        "model": "glm-5:cloud",
         "conversation_id": cid
     }
     
@@ -36,14 +45,15 @@ def test_tools():
                     try:
                         data = json.loads(data_str)
                         if "content" in data:
-                            print(data["content"], end="", flush=True)
+                            print(data["content"], end="", flush=True) # Keep print for stream content as it's raw output
                         elif "error" in data:
-                            print(f"\nError: {data['error']}")
+                            logger.error("Error: %s", data['error'])
                     except:
                         pass
-        print("\n\n(Stream Finished)")
+        print("\n") # Newline
+        logger.info("(Stream Finished)")
     except Exception as e:
-        print(f"Chat execution failed: {e}")
+        logger.error("Chat execution failed: %s", e)
 
 if __name__ == "__main__":
     test_tools()
