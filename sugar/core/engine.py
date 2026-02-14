@@ -150,6 +150,100 @@ class Engine:
         final_response = self.llm.chat(follow_up_messages, system_prompt=system_prompt)
         return final_response.content or tool_context
 
+    def process_message_stream(self, user_message: str):
+        """Process a message and yield chunks (streaming).
+
+        Handles tool calls by streaming the initial request, execution status,
+        and final response sequentially.
+        """
+        # Ensure we have an active conversation
+        if not self.current_conversation:
+            self.start_conversation()
+
+        assert self.current_conversation is not None
+        
+        # Save user message
+        self.memory.add_message(self.current_conversation, "user", user_message)
+        context_messages = self.memory.get_context_messages(
+            self.current_conversation, limit=20
+        )
+        system_prompt = self._build_system_prompt()
+
+        # 1. First Pass: Get thought process and potential tool calls
+        full_response = ""
+        try:
+            stream = self.llm.chat_stream(context_messages, system_prompt=system_prompt)
+            for chunk in stream:
+                full_response += chunk
+                yield chunk
+        except Exception as e:
+            logger.error("Error in stream pass 1: %s", e)
+            yield f"\n⚠️ Error: {e}"
+            return
+
+        # Save first response (might contain tool calls)
+        self.memory.add_message(self.current_conversation, "assistant", full_response)
+
+        # 2. Check for tool calls
+        # We use the LLM's helper to parse
+        tool_calls = self.llm._extract_tool_calls(full_response)
+        
+        if not tool_calls:
+            return
+
+        # 3. Process Tools
+        yield "\n\n" # Separator
+        tool_results = []
+        
+        for call in tool_calls:
+            tool_name = call.get("tool", "")
+            action = call.get("action", "")
+            params = call.get("params", {})
+            
+            yield f"*Executing {tool_name}.{action}...* "
+            
+            connector = self.connectors.get(tool_name)
+            if not connector:
+                res = f"⚠️ Unknown tool: '{tool_name}'"
+                tool_results.append(res)
+                yield f"{res}\n"
+                continue
+
+            result = connector.execute(action, params)
+            status = "✅" if result.success else "❌"
+            res_text = f"{status} Call: {tool_name}.{action}\nResult: {result.data}"
+            tool_results.append(res_text)
+            yield f"{status}\n"
+
+        # 4. Second Pass: Interpret results
+        tool_context = "\n\n".join(tool_results)
+        follow_up_messages = context_messages + [
+            {"role": "assistant", "content": full_response},
+            {
+                "role": "user",
+                "content": (
+                    f"Here are the results from the tools you called:\n\n{tool_context}\n\n"
+                    "Now provide a helpful, natural language response to the user based on "
+                    "these results. Do NOT include any JSON tool calls in your response."
+                ),
+            },
+        ]
+        
+        # Yield separator
+        yield "\n---\n"
+        
+        final_answer = ""
+        try:
+            stream2 = self.llm.chat_stream(follow_up_messages, system_prompt=system_prompt)
+            for chunk in stream2:
+                final_answer += chunk
+                yield chunk
+        except Exception as e:
+            yield f"\n⚠️ Error in interpretation: {e}"
+
+        # Save final answer
+        self.memory.add_message(self.current_conversation, "assistant", final_answer)
+
     def get_status(self) -> dict:
         """Get the current engine status."""
         return {
@@ -160,3 +254,4 @@ class Engine:
             },
             "active_conversation": self.current_conversation,
         }
+

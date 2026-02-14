@@ -86,10 +86,43 @@ class LLM:
         except Exception as e:
             logger.error("Unexpected LLM error: %s", e)
             return LLMResponse(
-                content=f"⚠️ Connection error: {e}. Is Ollama running?",
                 tool_calls=[],
                 raw=str(e),
             )
+
+    def chat_stream(
+        self,
+        messages: list[dict[str, str]],
+        system_prompt: str | None = None,
+    ):
+        """Send messages to Ollama and stream the response.
+
+        Yields:
+            str: Token chunks from the LLM.
+        """
+        full_messages = []
+
+        # Add system prompt
+        prompt = system_prompt or self.config.system_prompt
+        if prompt:
+            full_messages.append({"role": "system", "content": prompt})
+
+        full_messages.extend(messages)
+
+        try:
+            stream = self.client.chat(
+                model=self.model,
+                messages=full_messages,
+                stream=True,
+            )
+            for chunk in stream:
+                content = chunk.get("message", {}).get("content", "")
+                if content:
+                    yield content
+
+        except Exception as e:
+            logger.error("LLM Stream Error: %s", e)
+            yield f"\n⚠️ Stream Error: {e}"
 
     def _extract_tool_calls(self, content: str) -> list[dict]:
         """Extract JSON tool calls from the LLM response.
