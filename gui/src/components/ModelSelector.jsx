@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ChevronDown, Download, Loader2, Check, X } from 'lucide-react';
+import { ChevronDown, Download, Loader2, Check, X, AlertTriangle } from 'lucide-react';
 import clsx from 'clsx';
 
 export default function ModelSelector({ currentModel, onSelect }) {
@@ -14,7 +14,13 @@ export default function ModelSelector({ currentModel, onSelect }) {
     useEffect(() => {
         fetch('/api/ollama/models')
             .then(r => r.json())
-            .then(data => setModels(data.models || []))
+            .then(data => {
+                setModels(data.models || []);
+                // Auto-show pull if no models
+                if (!data.models || data.models.length === 0) {
+                    setShowPull(true);
+                }
+            })
             .catch(console.error);
     }, [isPulling]); // Refresh list after pull
 
@@ -22,7 +28,8 @@ export default function ModelSelector({ currentModel, onSelect }) {
         function handleClickOutside(event) {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
                 setIsOpen(false);
-                setShowPull(false);
+                // Don't hide pull if it's the only option?
+                // setShowPull(false); 
             }
         }
         document.addEventListener("mousedown", handleClickOutside);
@@ -85,36 +92,50 @@ export default function ModelSelector({ currentModel, onSelect }) {
         }
     };
 
+    const hasModels = models.length > 0;
+
     return (
         <div className="relative" ref={dropdownRef}>
             <button
                 onClick={() => setIsOpen(!isOpen)}
-                className="flex items-center gap-2 px-3 py-1.5 bg-gray-900 border border-gray-800 rounded-lg hover:border-gray-700 transition-colors text-sm text-gray-300"
+                className={clsx(
+                    "flex items-center gap-2 px-3 py-1.5 border rounded-lg transition-colors text-sm",
+                    hasModels ? "bg-gray-900 border-gray-800 hover:border-gray-700 text-gray-300" : "bg-red-900/20 border-red-500/50 text-red-400 animate-pulse"
+                )}
             >
-                <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                <span className="font-mono">{currentModel}</span>
-                <ChevronDown className="w-4 h-4 text-gray-500" />
+                <div className={clsx("w-2 h-2 rounded-full", hasModels ? "bg-green-500" : "bg-red-500")}></div>
+                <span className="font-mono">{hasModels ? currentModel : "Install Model"}</span>
+                <ChevronDown className="w-4 h-4 opacity-50" />
             </button>
 
             {isOpen && (
-                <div className="absolute top-full right-0 mt-2 w-64 bg-gray-900 border border-gray-800 rounded-xl shadow-xl shadow-black/50 overflow-hidden z-50">
+                <div className="absolute top-full right-0 mt-2 w-72 bg-gray-900 border border-gray-800 rounded-xl shadow-xl shadow-black/50 overflow-hidden z-50">
                     {!showPull ? (
                         <>
-                            <div className="max-h-60 overflow-y-auto py-1">
-                                {models.map(model => (
-                                    <button
-                                        key={model}
-                                        onClick={() => { onSelect(model); setIsOpen(false); }}
-                                        className={clsx(
-                                            "w-full text-left px-4 py-2 text-sm hover:bg-gray-800 flex items-center justify-between group",
-                                            currentModel === model ? "text-sugar-400 bg-sugar-900/10" : "text-gray-400"
-                                        )}
-                                    >
-                                        {model}
-                                        {currentModel === model && <Check className="w-3 h-3" />}
-                                    </button>
-                                ))}
-                            </div>
+                            {hasModels ? (
+                                <div className="max-h-60 overflow-y-auto py-1">
+                                    {models.map(model => (
+                                        <button
+                                            key={model}
+                                            onClick={() => { onSelect(model); setIsOpen(false); }}
+                                            className={clsx(
+                                                "w-full text-left px-4 py-2 text-sm hover:bg-gray-800 flex items-center justify-between group",
+                                                currentModel === model ? "text-sugar-400 bg-sugar-900/10" : "text-gray-400"
+                                            )}
+                                        >
+                                            {model}
+                                            {currentModel === model && <Check className="w-3 h-3" />}
+                                        </button>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="p-4 text-center text-gray-400 text-sm">
+                                    <AlertTriangle className="w-8 h-8 mx-auto mb-2 text-yellow-500" />
+                                    <p>No models found.</p>
+                                    <p className="text-xs mt-1">Pull a model to start chatting.</p>
+                                </div>
+                            )}
+
                             <div className="border-t border-gray-800 p-2">
                                 <button
                                     onClick={() => setShowPull(true)}
@@ -139,7 +160,7 @@ export default function ModelSelector({ currentModel, onSelect }) {
                                     type="text"
                                     value={pullName}
                                     onChange={(e) => setPullName(e.target.value)}
-                                    placeholder="e.g. llama3, mistral"
+                                    placeholder="e.g. tinyllama, mistral"
                                     className="w-full bg-gray-950 border border-gray-800 rounded px-3 py-2 text-sm text-white focus:ring-1 focus:ring-sugar-500 outline-none"
                                     disabled={isPulling}
                                     autoFocus
@@ -158,6 +179,12 @@ export default function ModelSelector({ currentModel, onSelect }) {
                                     >
                                         Pull Model
                                     </button>
+                                )}
+
+                                {!hasModels && (
+                                    <div className="text-[10px] text-gray-500 text-center">
+                                        Try <code>tinyllama</code> (fast) or <code>mistral</code> (good).
+                                    </div>
                                 )}
                             </form>
                         </div>

@@ -295,8 +295,14 @@ def pull_model(req: PullRequest):
             # ollama.pull streams progress objects
             stream = ollama.pull(req.name, stream=True)
             for progress in stream:
-                # status, digest, total, completed
-                yield f"data: {json.dumps(progress)}\n\n"
+                # Convert to dict if needed
+                data = progress
+                if hasattr(progress, "model_dump"):
+                    data = progress.model_dump()
+                elif hasattr(progress, "dict"):
+                    data = progress.dict()
+                
+                yield f"data: {json.dumps(data)}\n\n"
             yield "data: [DONE]\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
