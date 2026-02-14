@@ -271,7 +271,7 @@ def start_server(port: int = 8000) -> None:
     """Start the setup GUI server."""
     import uvicorn
     print(f"\n🍬 Sugar Setup Wizard running at: http://localhost:{port}\n")
-    uvicorn.run(app, host="0.0.0.0", port=port, log_level="warning")
+    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
 
 
 if __name__ == "__main__":
