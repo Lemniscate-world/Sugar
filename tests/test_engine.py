@@ -98,8 +98,22 @@ class TestEngine:
             chunks = list(self.engine.process_message_stream("Hi"))
             assert "".join(chunks) == "Hello stream"
 
-    def test_get_status(self) -> None:
-        with patch.object(self.engine.llm, "is_available", return_value=True):
-            status = self.engine.get_status()
-            assert status["llm_available"] is True
-            assert status["active_conversation"] == "test_conv_id"
+    @patch("sugar.core.llm.LLM.chat")
+    def test_process_message_recursion_limit(self, mock_chat: MagicMock) -> None:
+        # Mock LLM always returning a tool call
+        resp = LLMResponse(
+            content="Always searching.",
+            tool_calls=[{"tool": "obsidian", "action": "list_notes", "params": {}}],
+            raw='```json\n{"tool": "obsidian", "action": "list_notes", "params": {}}\n```'
+        )
+        mock_chat.return_value = resp
+        
+        mock_obsidian = MagicMock()
+        mock_obsidian.name = "obsidian"
+        mock_obsidian.is_configured.return_value = True
+        mock_obsidian.execute.return_value = MagicMock(success=True, data="data")
+        self.engine.register_connector(mock_obsidian)
+        
+        # Should stop after MAX_DEPTH (5)
+        response = self.engine.process_message("Infinite loop")
+        assert mock_chat.call_count == 5

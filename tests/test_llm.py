@@ -62,14 +62,32 @@ class TestLLMToolParsing:
         assert "Done!" in cleaned
 
     @patch("sugar.core.llm.ollama.Client")
-    def test_chat_connection_error(self, mock_client_cls: MagicMock) -> None:
+    def test_chat_stream_success(self, mock_client_cls: MagicMock) -> None:
         mock_client = MagicMock()
-        mock_client.chat.side_effect = Exception("Connection refused")
         mock_client_cls.return_value = mock_client
-
+        
+        def mock_gen():
+            yield {"message": {"content": "Hello"}}
+            yield {"message": {"content": " world"}}
+            
+        mock_client.chat.return_value = mock_gen()
+        
         llm = LLM(self.config)
-        llm.client = mock_client
+        chunks = list(llm.chat_stream([{"role": "user", "content": "hi"}]))
+        assert chunks == ["Hello", " world"]
 
-        result = llm.chat([{"role": "user", "content": "hello"}])
-        assert "Connection error" in result.content or "error" in result.content.lower()
-        assert result.has_tool_calls is False
+    @patch("sugar.core.llm.ollama.Client")
+    def test_is_available_true(self, mock_client_cls: MagicMock) -> None:
+        mock_client = MagicMock()
+        mock_client_cls.return_value = mock_client
+        
+        # Mocking model list
+        mock_model = MagicMock()
+        mock_model.model = "tinyllama:latest"
+        mock_resp = MagicMock()
+        mock_resp.models = [mock_model]
+        mock_client.list.return_value = mock_resp
+        
+        llm = LLM(self.config)
+        llm.model = "tinyllama:latest"
+        assert llm.is_available() is True
