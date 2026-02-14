@@ -1,3 +1,4 @@
+# Copyright (c) 2026 kuro. All Rights Reserved.
 """Conversation memory — SQLite-backed message storage and retrieval."""
 
 from __future__ import annotations

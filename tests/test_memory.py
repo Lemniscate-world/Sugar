@@ -1,3 +1,4 @@
+# Copyright (c) 2026 kuro. All Rights Reserved.
 """Tests for the Memory module (SQLite conversation storage)."""
 
 from pathlib import Path

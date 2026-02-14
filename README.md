@@ -67,4 +67,4 @@ User Message → CLI/Telegram
 
 ## License
 
-MIT
+Copyright (c) 2026 kuro. All Rights Reserved. Proprietary license.

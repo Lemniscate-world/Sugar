@@ -1,3 +1,4 @@
+# Copyright (c) 2026 kuro. All Rights Reserved.
 """Brain Engine — the central orchestrator that connects LLM, memory, and tools."""
 
 from __future__ import annotations
@@ -27,6 +28,11 @@ class Engine:
         self.memory = Memory(config.db_path)
         self.connectors: dict[str, BaseConnector] = {}
         self.current_conversation: str | None = None
+
+    def set_model(self, model: str) -> None:
+        """Update the LLM model to use."""
+        self.llm.model = model
+        logger.info("Engine model set to: %s", model)
 
     def register_connector(self, connector: BaseConnector) -> None:
         """Register a connector for use by the engine."""

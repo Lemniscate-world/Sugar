@@ -1,3 +1,4 @@
+# Copyright (c) 2026 kuro. All Rights Reserved.
 """CLI interface — interactive terminal chat with Sugar."""
 
 from __future__ import annotations

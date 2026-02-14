@@ -1,3 +1,4 @@
+# Copyright (c) 2026 kuro. All Rights Reserved.
 """Brain configuration — loads settings from environment variables."""
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ class Config:
     """Central configuration for the Brain application."""
 
     # Ollama
-    ollama_model: str = field(default_factory=lambda: os.getenv("OLLAMA_MODEL", "mistral"))
+    ollama_model: str = field(default_factory=lambda: os.getenv("OLLAMA_MODEL", "tinyllama:latest"))
     ollama_host: str = field(
         default_factory=lambda: os.getenv("OLLAMA_HOST", "http://localhost:11434")
     )

@@ -1,3 +1,4 @@
+# Copyright (c) 2026 kuro. All Rights Reserved.
 """Tests for the LLM module (Ollama wrapper)."""
 
 from unittest.mock import MagicMock, patch

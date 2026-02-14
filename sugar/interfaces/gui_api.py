@@ -1,3 +1,4 @@
+# Copyright (c) 2026 kuro. All Rights Reserved.
 """Sugar Setup GUI — FastAPI backend for the setup wizard."""
 
 from __future__ import annotations
@@ -57,7 +58,7 @@ engine.register_connector(WebConnector())
 
 
 class ConfigUpdate(BaseModel):
-    ollama_model: str = "mistral"
+    ollama_model: str = "tinyllama:latest"
     ollama_host: str = "http://localhost:11434"
     linear_api_key: str = ""
     obsidian_vault_path: str = ""
@@ -255,6 +256,9 @@ def chat_stream(req: ChatRequest) -> StreamingResponse:
         cid = engine.start_conversation(title=title)
     else:
         engine.current_conversation = cid
+
+    # Update engine model from request
+    engine.set_model(req.model)
 
     def event_generator():
         # Send ID first so frontend knows

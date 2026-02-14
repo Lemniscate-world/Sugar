@@ -1,3 +1,4 @@
+# Copyright (c) 2026 kuro. All Rights Reserved.
 """Tests for the Obsidian connector (filesystem-based note operations)."""
 
 from pathlib import Path
