@@ -1,0 +1,1 @@
+/home/kuro/Documents/kuro-rules/AI_GUIDELINES.md
