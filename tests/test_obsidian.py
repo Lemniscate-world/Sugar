@@ -99,6 +99,20 @@ class TestObsidianConnector:
         assert "No notes found" in result.data
 
     def test_missing_params(self) -> None:
-        result = self.connector.execute("search_notes", {})
+        result = self.connector.execute("read_note", {})
         assert result.success is False
-        assert "Missing" in result.data
+        assert "Missing 'path'" in result.data
+
+    def test_create_note_permission_error(self) -> None:
+        with patch("pathlib.Path.write_text") as mock_write:
+            mock_write.side_effect = PermissionError("Permission denied")
+            params = {"path": "restricted.md", "content": "secret"}
+            result = self.connector.execute("create_note", params)
+            assert result.success is False
+            assert "Permission denied" in result.data
+            
+    def test_append_note_not_found(self) -> None:
+        params = {"path": "missing.md", "content": "test"}
+        result = self.connector.execute("append_to_note", params)
+        assert result.success is False
+        assert "does not exist" in result.data

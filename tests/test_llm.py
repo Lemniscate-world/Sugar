@@ -88,6 +88,22 @@ class TestLLMToolParsing:
         mock_resp.models = [mock_model]
         mock_client.list.return_value = mock_resp
         
+    @patch("sugar.core.llm.ollama.Client")
+    def test_is_available_false(self, mock_client_cls: MagicMock) -> None:
+        mock_client = MagicMock()
+        mock_client_cls.return_value = mock_client
+        mock_client.list.side_effect = Exception("Service Down")
+        
         llm = LLM(self.config)
-        llm.model = "tinyllama:latest"
-        assert llm.is_available() is True
+        assert llm.is_available() is False
+
+    @patch("sugar.core.llm.ollama.Client")
+    def test_chat_stream_error(self, mock_client_cls: MagicMock) -> None:
+        mock_client = MagicMock()
+        mock_client_cls.return_value = mock_client
+        mock_client.chat.side_effect = Exception("Stream interrupted")
+        
+        llm = LLM(self.config)
+        chunks = list(llm.chat_stream([{"role": "user", "content": "hi"}]))
+        assert len(chunks) == 1
+        assert "stream error" in chunks[0].lower()

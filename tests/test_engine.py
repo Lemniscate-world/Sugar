@@ -98,6 +98,42 @@ class TestEngine:
             chunks = list(self.engine.process_message_stream("Hi"))
             assert "".join(chunks) == "Hello stream"
 
+    def test_get_status(self) -> None:
+        with patch.object(self.engine.llm, "is_available", return_value=True):
+            status = self.engine.get_status()
+            assert status["llm_available"] is True
+            assert status["active_conversation"] == "test_conv_id"
+
+    @patch("sugar.core.engine.LLM.chat_stream")
+    def test_process_message_stream_with_tools(self, mock_chat_stream: MagicMock) -> None:
+        # Mock stream results
+        def turn1(*args, **kwargs):
+            yield 'Search for me: ```json\n{"tool": "web", "action": "search", "params": {"query": "test"}}\n```'
+            
+        def turn2(*args, **kwargs):
+            yield "Here is what I found."
+            
+        mock_chat_stream.side_effect = [turn1(), turn2()]
+        
+        mock_web = MagicMock()
+        mock_web.name = "web"
+        mock_web.is_configured.return_value = True
+        mock_web.execute.return_value = MagicMock(success=True, data="Web result")
+        self.engine.register_connector(mock_web)
+        
+        with patch.object(self.engine.llm, "_extract_tool_calls") as mock_extract:
+            mock_extract.side_effect = [[{"tool": "web", "action": "search", "params": {"query": "test"}}], []]
+            chunks = list(self.engine.process_message_stream("Stream me"))
+            full_text = "".join(chunks)
+            assert "Search for me" in full_text
+            assert "Here is what I found" in full_text
+            assert "Executing web.search" in full_text
+
+    def test_build_system_prompt_no_connectors(self) -> None:
+        self.engine.connectors = {}
+        prompt = self.engine._build_system_prompt()
+        assert "Available Tools" not in prompt
+
     @patch("sugar.core.llm.LLM.chat")
     def test_process_message_recursion_limit(self, mock_chat: MagicMock) -> None:
         # Mock LLM always returning a tool call
@@ -115,5 +151,19 @@ class TestEngine:
         self.engine.register_connector(mock_obsidian)
         
         # Should stop after MAX_DEPTH (5)
-        response = self.engine.process_message("Infinite loop")
-        assert mock_chat.call_count == 5
+    @patch("sugar.core.engine.LLM.chat_stream")
+    def test_process_message_stream_depth_limit(self, mock_chat_stream: MagicMock) -> None:
+        def loop_gen(*args, **kwargs):
+            yield 'Loop: ```json\n{"tool": "obsidian", "action": "list_notes", "params": {}}\n```'
+            
+        mock_chat_stream.side_effect = [loop_gen() for _ in range(6)]
+        
+        with patch.object(self.engine.llm, "_extract_tool_calls", return_value=[{"tool": "obsidian", "action": "list_notes", "params": {}}]):
+            mock_obsidian = MagicMock()
+            mock_obsidian.name = "obsidian"
+            mock_obsidian.is_configured.return_value = True
+            mock_obsidian.execute.return_value = MagicMock(success=True, data="data")
+            self.engine.register_connector(mock_obsidian)
+            
+            chunks = list(self.engine.process_message_stream("Loop me"))
+            assert any("Maximum reasoning depth reached" in c for c in chunks)

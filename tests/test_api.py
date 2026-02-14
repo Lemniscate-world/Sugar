@@ -92,3 +92,53 @@ class TestAPI:
         response = self.client.get("/api/health")
         assert response.status_code == 200
         assert response.json()["status"] == "ok"
+
+    def test_browse_directory(self) -> None:
+        payload = {"path": "/tmp"}
+        with patch("pathlib.Path.is_dir", return_value=True):
+            with patch("pathlib.Path.iterdir", return_value=[]):
+                response = self.client.post("/api/browse", json=payload)
+                assert response.status_code == 200
+                assert "entries" in response.json()
+
+    def test_validate_vault(self) -> None:
+        payload = {"path": "/invalid/path"}
+        response = self.client.post("/api/validate/vault", json=payload)
+        assert response.status_code == 200
+        assert response.json()["valid"] is False
+
+    @patch("ollama.pull")
+    def test_pull_model(self, mock_pull: MagicMock) -> None:
+        def mock_pull_gen(*args, **kwargs):
+            yield {"status": "pulling", "completed": 50, "total": 100}
+            
+        mock_pull.side_effect = mock_pull_gen
+        response = self.client.post("/api/models/pull", json={"name": "llama3"})
+        assert response.status_code == 200
+        assert "pulling" in response.text
+
+    @patch("sugar.interfaces.gui_api._list_ollama_models")
+    def test_ollama_models_endpoint(self, mock_list: MagicMock) -> None:
+        mock_list.return_value = ["m1", "m2"]
+        response = self.client.get("/api/ollama/models")
+        assert response.status_code == 200
+        assert response.json()["models"] == ["m1", "m2"]
+
+    @patch("sugar.interfaces.gui_api.engine")
+    def test_get_conversation_detail(self, mock_engine: MagicMock) -> None:
+        mock_msg = MagicMock()
+        mock_msg.to_dict.return_value = {"role": "user", "content": "hello"}
+        mock_engine.memory.get_messages.return_value = [mock_msg]
+        
+        response = self.client.get("/api/conversations/test-id")
+        assert response.status_code == 200
+        assert response.json()["messages"][0]["content"] == "hello"
+
+    def test_read_env_helper(self) -> None:
+        from sugar.interfaces.gui_api import _read_env
+        with patch("pathlib.Path.exists", return_value=True):
+            with patch("pathlib.Path.read_text", return_value="OLLAMA_MODEL=m\nAPI_KEY=secret_key_123\n"):
+                env = _read_env()
+                assert env["OLLAMA_MODEL"] == "m"
+                assert "_123" in env["API_KEY"]
+                assert "secret" not in env["API_KEY"]  # Masked

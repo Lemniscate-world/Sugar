@@ -124,6 +124,22 @@ class TestLinearConnector:
         assert result.success is False
         assert "Missing" in result.data
 
+    @patch("requests.post")
+    def test_list_issues_api_error(self, mock_post: MagicMock) -> None:
+        mock_post.return_value.json.return_value = {"errors": [{"message": "Access denied"}]}
+        
+        result = self.connector.execute("list_issues", {})
+        assert result.success is False
+        assert "Access denied" in result.data
+
+    @patch("requests.post")
+    def test_create_issue_api_error(self, mock_post: MagicMock) -> None:
+        mock_post.side_effect = Exception("Connection Timeout")
+        
+        result = self.connector.execute("create_issue", {"title": "fail", "team": "T1"})
+        assert result.success is False
+        assert "Connection Timeout" in result.data
+
     def test_unknown_action(self) -> None:
         result = self.connector.execute("nonexistent_action", {})
         assert result.success is False
