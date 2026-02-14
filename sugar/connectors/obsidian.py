@@ -90,7 +90,8 @@ class ObsidianConnector(BaseConnector):
 
     def _resolve_path(self, relative_path: str) -> Path:
         """Resolve a relative path within the vault, with safety checks."""
-        assert self.vault_path is not None
+        if self.vault_path is None:
+            raise ValueError("Vault path not configured")
         full_path = (self.vault_path / relative_path).resolve()
         # Security: ensure we stay within the vault
         if not str(full_path).startswith(str(self.vault_path.resolve())):
@@ -102,7 +103,8 @@ class ObsidianConnector(BaseConnector):
         if not query:
             return ActionResult(success=False, data="Missing 'query' parameter.")
 
-        assert self.vault_path is not None
+        if self.vault_path is None:
+            return ActionResult(success=False, data="Vault path not configured")
         results = []
 
         for md_file in self.vault_path.rglob("*.md"):
@@ -228,7 +230,8 @@ class ObsidianConnector(BaseConnector):
         )
 
     def _list_notes(self, params: dict) -> ActionResult:
-        assert self.vault_path is not None
+        if self.vault_path is None:
+            return ActionResult(success=False, data="Vault path not configured")
         subdir = params.get("directory", "")
         limit = params.get("limit", 20)
 

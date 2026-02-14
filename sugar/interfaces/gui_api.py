@@ -18,6 +18,7 @@ from sugar.config import Config
 from sugar.core.engine import Engine
 from sugar.connectors.obsidian import ObsidianConnector
 from sugar.connectors.linear import LinearConnector
+from sugar.connectors.web import WebConnector
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,9 @@ if config.obsidian_enabled:
 
 if config.linear_enabled:
     engine.register_connector(LinearConnector(config.linear_api_key))
+
+# Always enable Web Search
+engine.register_connector(WebConnector())
 
 
 # --- Models ---
@@ -236,7 +240,7 @@ class ChatRequest(BaseModel):
     conversation_id: str | None = None
 
 @app.post("/api/chat/stream")
-def chat_stream(req: ChatRequest):
+def chat_stream(req: ChatRequest) -> StreamingResponse:
     # active conversation
     cid = req.conversation_id
     
@@ -273,18 +277,18 @@ def chat_stream(req: ChatRequest):
 
 
 @app.get("/api/conversations")
-def list_conversations():
+def list_conversations() -> dict:
     """List recent conversations."""
     return {"conversations": engine.memory.list_conversations(limit=50)}
 
 @app.get("/api/conversations/{cid}")
-def get_conversation(cid: str):
+def get_conversation(cid: str) -> dict:
     """Get messages for a conversation."""
     msgs = engine.memory.get_messages(cid, limit=100)
     return {"messages": [m.to_dict() for m in msgs]}
 
 @app.post("/api/conversations")
-def new_conversation():
+def new_conversation() -> dict:
     """Create a new conversation."""
     cid = engine.memory.new_conversation(title="New Chat")
     return {"id": cid, "title": "New Chat"}
@@ -294,7 +298,7 @@ class PullRequest(BaseModel):
     name: str
 
 @app.post("/api/models/pull")
-def pull_model(req: PullRequest):
+def pull_model(req: PullRequest) -> StreamingResponse:
     """Pull a model from Ollama library."""
     def pull_generator():
         try:
@@ -336,7 +340,7 @@ if GUI_DIST.is_dir():
 
 def _is_ollama_installed() -> bool:
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # nosec
             ["which", "ollama"], capture_output=True, text=True, timeout=5
         )
         return result.returncode == 0
@@ -389,7 +393,7 @@ def _validate_vault(path_str: str) -> bool:
 def start_server(port: int = 8000) -> None:
     """Start the setup GUI server."""
     import uvicorn
-    print(f"\n🍬 Sugar Setup Wizard running at: http://localhost:{port}\n")
+    logger.info("Sugar Setup Wizard running at: http://localhost:%s", port)
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
 
 

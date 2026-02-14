@@ -86,6 +86,7 @@ class LLM:
         except Exception as e:
             logger.error("Unexpected LLM error: %s", e)
             return LLMResponse(
+                content=f"⚠️ Connection error: {e}. Is Ollama running?",
                 tool_calls=[],
                 raw=str(e),
             )

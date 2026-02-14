@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Generator
 
 from sugar.config import Config
 from sugar.connectors.base import BaseConnector
@@ -54,7 +55,8 @@ class Engine:
         if not self.current_conversation:
             self.start_conversation()
 
-        assert self.current_conversation is not None
+        if self.current_conversation is None:
+             raise RuntimeError("Failed to start conversation")
 
         # Save user message
         self.memory.add_message(self.current_conversation, "user", user_message)
@@ -150,18 +152,18 @@ class Engine:
         final_response = self.llm.chat(follow_up_messages, system_prompt=system_prompt)
         return final_response.content or tool_context
 
-    def process_message_stream(self, user_message: str):
+    def process_message_stream(self, user_message: str) -> Generator[str, None, None]:
         """Process a message and yield chunks (streaming).
 
         Handles tool calls by streaming the initial request, execution status,
-        and final response sequentially.
+        and final response sequentially in a multi-turn loop.
         """
-        # Ensure we have an active conversation
         if not self.current_conversation:
             self.start_conversation()
 
-        assert self.current_conversation is not None
-        
+        if self.current_conversation is None:
+            raise RuntimeError("Failed to start conversation")
+
         # Save user message
         self.memory.add_message(self.current_conversation, "user", user_message)
         context_messages = self.memory.get_context_messages(
@@ -169,80 +171,75 @@ class Engine:
         )
         system_prompt = self._build_system_prompt()
 
-        # 1. First Pass: Get thought process and potential tool calls
-        full_response = ""
-        try:
-            stream = self.llm.chat_stream(context_messages, system_prompt=system_prompt)
-            for chunk in stream:
-                full_response += chunk
-                yield chunk
-        except Exception as e:
-            logger.error("Error in stream pass 1: %s", e)
-            yield f"\n⚠️ Error: {e}"
-            return
+        current_messages = list(context_messages)
+        depth = 0
+        MAX_DEPTH = 5
 
-        # Save first response (might contain tool calls)
-        self.memory.add_message(self.current_conversation, "assistant", full_response)
-
-        # 2. Check for tool calls
-        # We use the LLM's helper to parse
-        tool_calls = self.llm._extract_tool_calls(full_response)
-        
-        if not tool_calls:
-            return
-
-        # 3. Process Tools
-        yield "\n\n" # Separator
-        tool_results = []
-        
-        for call in tool_calls:
-            tool_name = call.get("tool", "")
-            action = call.get("action", "")
-            params = call.get("params", {})
+        while depth < MAX_DEPTH:
+            depth += 1
+            full_response = ""
             
-            yield f"*Executing {tool_name}.{action}...* "
+            # 1. Get LLM response
+            try:
+                stream = self.llm.chat_stream(current_messages, system_prompt=system_prompt)
+                for chunk in stream:
+                    full_response += chunk
+                    yield chunk
+            except Exception as e:
+                logger.error("Error in stream pass: %s", e)
+                yield f"\n⚠️ Error: {e}"
+                break
+
+            # Save assistant response to memory and local context
+            self.memory.add_message(self.current_conversation, "assistant", full_response)
+            current_messages.append({"role": "assistant", "content": full_response})
+
+            # 2. Check for tool calls
+            tool_calls = self.llm._extract_tool_calls(full_response)
+            if not tool_calls:
+                break
+
+            # 3. Process Tools
+            yield "\n\n"
+            tool_results = []
             
-            connector = self.connectors.get(tool_name)
-            if not connector:
-                res = f"⚠️ Unknown tool: '{tool_name}'"
-                tool_results.append(res)
-                yield f"{res}\n"
-                continue
+            for call in tool_calls:
+                tool_name = call.get("tool", "")
+                action = call.get("action", "")
+                params = call.get("params", {})
+                
+                yield f"*Executing {tool_name}.{action}...* "
+                
+                connector = self.connectors.get(tool_name)
+                if not connector:
+                    res = f"⚠️ Unknown tool: '{tool_name}'"
+                    tool_results.append(res)
+                    yield f"{res}\n"
+                    continue
 
-            result = connector.execute(action, params)
-            status = "✅" if result.success else "❌"
-            res_text = f"{status} Call: {tool_name}.{action}\nResult: {result.data}"
-            tool_results.append(res_text)
-            yield f"{status}\n"
+                try:
+                    result = connector.execute(action, params)
+                    status = "✅" if result.success else "❌"
+                    res_text = f"{status} Call: {tool_name}.{action}\nResult: {result.data}"
+                    tool_results.append(res_text)
+                    yield f"{status}\n"
+                except Exception as e:
+                    logger.error("Tool execution failed: %s", e)
+                    yield f"❌ Error: {e}\n"
+                    tool_results.append(f"Tool {tool_name} error: {e}")
 
-        # 4. Second Pass: Interpret results
-        tool_context = "\n\n".join(tool_results)
-        follow_up_messages = context_messages + [
-            {"role": "assistant", "content": full_response},
-            {
-                "role": "user",
-                "content": (
-                    f"Here are the results from the tools you called:\n\n{tool_context}\n\n"
-                    "Now provide a helpful, natural language response to the user based on "
-                    "these results. Do NOT include any JSON tool calls in your response."
-                ),
-            },
-        ]
-        
-        # Yield separator
-        yield "\n---\n"
-        
-        final_answer = ""
-        try:
-            stream2 = self.llm.chat_stream(follow_up_messages, system_prompt=system_prompt)
-            for chunk in stream2:
-                final_answer += chunk
-                yield chunk
-        except Exception as e:
-            yield f"\n⚠️ Error in interpretation: {e}"
+            # 4. Prepare feedback for next pass
+            tool_context = "\n\n".join(tool_results)
+            feedback = (
+                f"Results from previous tool calls:\n\n{tool_context}\n\n"
+                "Analyze these results. If you have the answer, respond to the user. "
+                "If you need more information, use another tool call."
+            )
+            current_messages.append({"role": "user", "content": feedback})
+            yield "\n---\n"
 
-        # Save final answer
-        self.memory.add_message(self.current_conversation, "assistant", final_answer)
+        if depth >= MAX_DEPTH:
+            yield "\n⚠️ Maximum reasoning depth reached."
 
     def get_status(self) -> dict:
         """Get the current engine status."""
