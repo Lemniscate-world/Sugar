@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronRight, Check, AlertCircle, Folder, Key, Brain as BrainIcon, Terminal } from 'lucide-react'
+import { ChevronRight, Check, AlertCircle, Folder, Key, Terminal } from 'lucide-react'
 import clsx from 'clsx'
+import Dashboard from './components/Dashboard'
+import SugarLogo from './components/SugarLogo'
 
-// --- Components ---
+// --- Setup Components ---
 
 function WelcomeStep({ onNext }) {
     return (
@@ -15,7 +17,7 @@ function WelcomeStep({ onNext }) {
         >
             <div className="relative inline-block">
                 <div className="absolute inset-0 bg-sugar-500 blur-3xl opacity-20 rounded-full"></div>
-                <BrainIcon className="w-24 h-24 text-sugar-400 relative z-10 mx-auto" />
+                <SugarLogo className="w-24 h-24 relative z-10 mx-auto" />
             </div>
 
             <div className="space-y-2">
@@ -44,7 +46,7 @@ function WelcomeStep({ onNext }) {
 
 function VaultStep({ config, updateConfig, onNext, onBack }) {
     const [path, setPath] = useState(config.obsidian_vault_path || '')
-    const [status, setStatus] = useState(null) // { valid: bool, message: str, md_count: int }
+    const [status, setStatus] = useState(null)
     const [isValidating, setIsValidating] = useState(false)
 
     const validate = async () => {
@@ -137,7 +139,7 @@ function LinearStep({ config, updateConfig, onNext, onBack }) {
             const res = await fetch('/api/validate/linear', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ path: key }) // reusing path field
+                body: JSON.stringify({ path: key })
             })
             const data = await res.json()
             if (data.valid) {
@@ -232,7 +234,6 @@ function OllamaStep({ config, updateConfig, onNext, onBack }) {
             const data = await res.json()
             setStatus(data.ollama)
             if (data.ollama.running && data.ollama.models.length > 0) {
-                // Auto-select first model if not set
                 if (!config.ollama_model) {
                     updateConfig('ollama_model', data.ollama.models[0])
                 }
@@ -286,22 +287,6 @@ function OllamaStep({ config, updateConfig, onNext, onBack }) {
                 </div>
             </div>
 
-            {!isLoading && !status.installed && (
-                <div className="bg-red-900/20 border border-red-900/50 p-4 rounded-lg text-sm text-red-200">
-                    <p className="font-bold mb-2">Ollama not found</p>
-                    <p>Please install Ollama manually:</p>
-                    <code className="block bg-black/30 p-2 rounded mt-2 font-mono">curl -fsSL https://ollama.com/install.sh | sh</code>
-                </div>
-            )}
-
-            {!isLoading && status.installed && !status.running && (
-                <div className="bg-yellow-900/20 border border-yellow-900/50 p-4 rounded-lg text-sm text-yellow-200">
-                    <p className="font-bold mb-2">Ollama is stopped</p>
-                    <p>Run this in a terminal:</p>
-                    <code className="block bg-black/30 p-2 rounded mt-2 font-mono">ollama serve</code>
-                </div>
-            )}
-
             <div className="flex justify-between pt-8">
                 <button onClick={onBack} className="text-gray-400 hover:text-white transition-colors">Back</button>
                 <button
@@ -316,9 +301,8 @@ function OllamaStep({ config, updateConfig, onNext, onBack }) {
     )
 }
 
-function FinalStep({ config }) {
+function FinalStep({ config, onComplete }) {
     const [isSaving, setIsSaving] = useState(false)
-    const [saved, setSaved] = useState(false)
 
     useEffect(() => {
         const save = async () => {
@@ -329,7 +313,10 @@ function FinalStep({ config }) {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(config)
                 })
-                setSaved(true)
+                // Allow a moment for the user to see success
+                setTimeout(() => {
+                    onComplete()
+                }, 2000)
             } catch (e) {
                 console.error(e)
             }
@@ -350,44 +337,14 @@ function FinalStep({ config }) {
 
             <h1 className="text-4xl font-bold mb-4">All Set!</h1>
             <p className="text-xl text-gray-400 max-w-lg mx-auto mb-10">
-                Sugar is configured and ready to go. You can close this window and start chatting in your terminal.
+                Sugar is ready. Redirecting to dashboard...
             </p>
-
-            <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 max-w-sm mx-auto mb-8">
-                <p className="text-sm text-gray-400 mb-2">Run this in your terminal:</p>
-                <code className="block bg-black p-3 rounded text-green-400 font-mono text-lg">sugar</code>
-            </div>
         </motion.div>
     )
 }
 
-// --- Main App ---
-
-export default function App() {
+function SetupWizard({ config, updateConfig, onComplete }) {
     const [step, setStep] = useState(0)
-    const [config, setConfig] = useState({
-        obsidian_vault_path: '',
-        linear_api_key: '',
-        ollama_model: 'mistral',
-        ollama_host: 'http://localhost:11434',
-        telegram_bot_token: ''
-    })
-
-    // Load existing config on mount
-    useEffect(() => {
-        fetch('/api/status').then(r => r.json()).then(data => {
-            if (data.current_config) {
-                setConfig(prev => ({
-                    ...prev,
-                    ...data.current_config
-                }))
-            }
-        })
-    }, [])
-
-    const updateConfig = (key, value) => {
-        setConfig(prev => ({ ...prev, [key]: value }))
-    }
 
     const next = () => setStep(s => s + 1)
     const back = () => setStep(s => s - 1)
@@ -400,10 +357,9 @@ export default function App() {
                     {step === 1 && <VaultStep key="vault" config={config} updateConfig={updateConfig} onNext={next} onBack={back} />}
                     {step === 2 && <LinearStep key="linear" config={config} updateConfig={updateConfig} onNext={next} onBack={back} />}
                     {step === 3 && <OllamaStep key="ollama" config={config} updateConfig={updateConfig} onNext={next} onBack={back} />}
-                    {step === 4 && <FinalStep key="final" config={config} />}
+                    {step === 4 && <FinalStep key="final" config={config} onComplete={onComplete} />}
                 </AnimatePresence>
 
-                {/* Process Indicators */}
                 {step > 0 && step < 4 && (
                     <div className="flex justify-center gap-2 mt-12">
                         {[1, 2, 3].map((i) => (
@@ -420,4 +376,44 @@ export default function App() {
             </div>
         </div>
     )
+}
+
+// --- Main App ---
+
+export default function App() {
+    const [loading, setLoading] = useState(true)
+    const [config, setConfig] = useState({
+        obsidian_vault_path: '',
+        linear_api_key: '',
+        ollama_model: 'mistral',
+        ollama_host: 'http://localhost:11434',
+        telegram_bot_token: ''
+    })
+    const [isConfigured, setIsConfigured] = useState(false)
+
+    useEffect(() => {
+        fetch('/api/status').then(r => r.json()).then(data => {
+            if (data.current_config) {
+                setConfig(prev => ({ ...prev, ...data.current_config }))
+            }
+            // Use obsidian_vault_valid as proxy for "is configured"
+            // Start dashboard if configured
+            if (data.obsidian_vault_valid) {
+                setIsConfigured(true)
+            }
+            setLoading(false)
+        })
+    }, [])
+
+    const updateConfig = (key, value) => {
+        setConfig(prev => ({ ...prev, [key]: value }))
+    }
+
+    if (loading) return <div className="min-h-screen bg-gray-950 flex items-center justify-center text-sugar-500">Loading Sugar...</div>
+
+    if (isConfigured) {
+        return <Dashboard config={config} updateConfig={updateConfig} />
+    }
+
+    return <SetupWizard config={config} updateConfig={updateConfig} onComplete={() => setIsConfigured(true)} />
 }

@@ -7,11 +7,15 @@ import os
 import subprocess
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+import ollama
+import ollama
+import json
+from sugar.core.memory import Memory
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +32,9 @@ app.add_middleware(
 
 # Project root
 PROJECT_ROOT = Path(__file__).parent.parent.parent
+
+# Initialize Memory
+memory = Memory(PROJECT_ROOT / "sugar_memory.db")
 
 
 # --- Models ---
@@ -195,6 +202,106 @@ def ollama_models() -> dict:
         "running": _check_ollama(),
         "models": _list_ollama_models(),
     }
+
+
+# --- Chat & Intelligence APIs ---
+
+@app.post("/api/chat")
+def chat(request: Request):
+    """Chat with the AI model (streaming)."""
+    # Use sync def so FastAPI runs it in threadpool
+    import asyncio
+    
+    # We need to read body in sync endpoint? request.json() is async.
+    # Better to use async def and run blocking code in executor, or use Pydantic model.
+    # Let's use Pydantic model for body.
+    return StreamingResponse(content="Error: use /api/chat/json", status_code=400)
+
+class ChatRequest(BaseModel):
+    messages: list[dict]
+    model: str = "mistral"
+    conversation_id: str | None = None
+
+@app.post("/api/chat/stream")
+def chat_stream(req: ChatRequest):
+    # active conversation
+    cid = req.conversation_id
+    
+    # extract user message
+    user_content = ""
+    if req.messages and req.messages[-1]["role"] == "user":
+        user_content = req.messages[-1]["content"]
+
+    if not cid:
+        title = user_content[:40] if user_content else "New Chat"
+        cid = memory.new_conversation(title=title)
+    
+    # save user message if it's new (simple check: if we just created cid, or trust frontend)
+    # Ideally frontend sends explicit "add message" or we just append last.
+    # We'll assume the last message in `messages` is the new one to add.
+    if user_content:
+        memory.add_message(cid, "user", user_content)
+
+    def event_generator():
+        # Send ID first so frontend knows
+        yield f"data: {json.dumps({'conversation_id': cid})}\n\n"
+        
+        full_response = ""
+        try:
+            stream = ollama.chat(model=req.model, messages=req.messages, stream=True)
+            for chunk in stream:
+                content = chunk.get("message", {}).get("content", "")
+                if content:
+                    full_response += content
+                    yield f"data: {json.dumps({'content': content})}\n\n"
+            
+            # Save assistant response
+            if full_response:
+                memory.add_message(cid, "assistant", full_response)
+                
+            yield "data: [DONE]\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@app.get("/api/conversations")
+def list_conversations():
+    """List recent conversations."""
+    return {"conversations": memory.list_conversations(limit=50)}
+
+@app.get("/api/conversations/{cid}")
+def get_conversation(cid: str):
+    """Get messages for a conversation."""
+    msgs = memory.get_messages(cid, limit=100)
+    return {"messages": [m.to_dict() for m in msgs]}
+
+@app.post("/api/conversations")
+def new_conversation():
+    """Create a new conversation."""
+    cid = memory.new_conversation(title="New Chat")
+    return {"id": cid, "title": "New Chat"}
+
+
+class PullRequest(BaseModel):
+    name: str
+
+@app.post("/api/models/pull")
+def pull_model(req: PullRequest):
+    """Pull a model from Ollama library."""
+    def pull_generator():
+        try:
+            # ollama.pull streams progress objects
+            stream = ollama.pull(req.name, stream=True)
+            for progress in stream:
+                # status, digest, total, completed
+                yield f"data: {json.dumps(progress)}\n\n"
+            yield "data: [DONE]\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+    return StreamingResponse(pull_generator(), media_type="text/event-stream")
 
 
 # --- Serve built GUI ---
