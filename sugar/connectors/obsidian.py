@@ -1,4 +1,3 @@
-# Copyright (c) 2026 kuro. All Rights Reserved.
 """Obsidian connector — read, search, and write markdown notes in an Obsidian vault."""
 
 from __future__ import annotations

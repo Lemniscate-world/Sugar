@@ -5,10 +5,10 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "sugar"
 version = "0.1.0"
-description: "Sugar — Your personal AI operating layer. (Proprietary)"
+description = "Sugar — Your personal AI operating layer. Chat with your tools via local LLM."
 readme = "README.md"
 requires-python = ">=3.11"
-license = "Proprietary"
+license = "MIT"
 authors = [
     {name = "kuro"},
 ]

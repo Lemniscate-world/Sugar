@@ -1,4 +1,3 @@
-# Copyright (c) 2026 kuro. All Rights Reserved.
 """Brain Engine — the central orchestrator that connects LLM, memory, and tools."""
 
 from __future__ import annotations

@@ -1,4 +1,3 @@
-# Copyright (c) 2026 kuro. All Rights Reserved.
 """Sugar Setup GUI — FastAPI backend for the setup wizard."""
 
 from __future__ import annotations

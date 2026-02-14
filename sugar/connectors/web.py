@@ -1,4 +1,3 @@
-# Copyright (c) 2026 kuro. All Rights Reserved.
 """Web search connector — search the web via DuckDuckGo (free, no API key)."""
 
 from __future__ import annotations

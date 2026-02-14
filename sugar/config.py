@@ -1,4 +1,3 @@
-# Copyright (c) 2026 kuro. All Rights Reserved.
 """Brain configuration — loads settings from environment variables."""
 
 from __future__ import annotations

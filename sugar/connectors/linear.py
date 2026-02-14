@@ -1,4 +1,3 @@
-# Copyright (c) 2026 kuro. All Rights Reserved.
 """Linear connector — read and write to Linear via GraphQL API."""
 
 from __future__ import annotations

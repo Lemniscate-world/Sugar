@@ -1,4 +1,3 @@
-# Copyright (c) 2026 kuro. All Rights Reserved.
 """Ollama LLM wrapper — handles communication with the local Ollama instance."""
 
 from __future__ import annotations
